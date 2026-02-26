@@ -1,5 +1,10 @@
 # it-snapshot
 
+![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
+![psutil](https://img.shields.io/badge/dependency-psutil-green)
+![GitHub repo](https://img.shields.io/badge/GitHub-websanal%2Fit--snapshot-181717?logo=github&logoColor=white)
+
 A lightweight Windows CLI tool that collects a point-in-time IT snapshot of a machine and outputs a structured `report.json`.
 
 ## What it collects
