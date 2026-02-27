@@ -4,7 +4,7 @@ import json
 import winreg
 
 from ..base import BaseCollector
-from ._utils import run_powershell
+from . import _utils
 
 
 class SecurityCollector(BaseCollector):
@@ -24,10 +24,10 @@ class SecurityCollector(BaseCollector):
 
     def _get_av(self) -> list:
         try:
-            ps = run_powershell(
+            ps = _utils.run_powershell(
                 "Get-WmiObject -Namespace root/SecurityCenter2 -Class AntiVirusProduct "
                 "| Select-Object displayName,productState "
-                "| ConvertTo-Json -AsArray"
+                "| ConvertTo-Json"
             )
             items = json.loads(ps)
             if isinstance(items, dict):
@@ -50,10 +50,10 @@ class SecurityCollector(BaseCollector):
 
     def _get_firewall(self) -> dict:
         try:
-            ps = run_powershell(
+            ps = _utils.run_powershell(
                 "Get-NetFirewallProfile "
                 "| Select-Object Name,Enabled "
-                "| ConvertTo-Json -AsArray"
+                "| ConvertTo-Json"
             )
             profiles = json.loads(ps)
             if isinstance(profiles, dict):
@@ -86,10 +86,10 @@ class SecurityCollector(BaseCollector):
 
     def _get_bitlocker(self) -> list:
         try:
-            ps = run_powershell(
+            ps = _utils.run_powershell(
                 "Get-BitLockerVolume "
                 "| Select-Object MountPoint,VolumeStatus,ProtectionStatus "
-                "| ConvertTo-Json -AsArray"
+                "| ConvertTo-Json"
             )
             items = json.loads(ps)
             if isinstance(items, dict):
@@ -107,7 +107,7 @@ class SecurityCollector(BaseCollector):
 
     def _get_defender(self) -> dict:
         try:
-            ps = run_powershell(
+            ps = _utils.run_powershell(
                 "Get-MpComputerStatus "
                 "| Select-Object AMServiceEnabled,RealTimeProtectionEnabled,"
                 "AntivirusSignatureLastUpdated "
@@ -128,7 +128,7 @@ class SecurityCollector(BaseCollector):
 
     def _get_secure_boot(self):
         try:
-            ps = run_powershell("Confirm-SecureBootUEFI")
+            ps = _utils.run_powershell("Confirm-SecureBootUEFI")
             return ps.strip().lower() == "true"
         except Exception:
             return None
