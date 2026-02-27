@@ -6,7 +6,7 @@ import socket
 import psutil
 
 from ..base import BaseCollector
-from ._utils import run_powershell
+from . import _utils
 
 
 class DeviceIdentityCollector(BaseCollector):
@@ -32,7 +32,7 @@ class DeviceIdentityCollector(BaseCollector):
         domain = None
         workgroup = None
         try:
-            ps = run_powershell(
+            ps = _utils.run_powershell(
                 "Get-WmiObject Win32_ComputerSystem "
                 "| Select-Object Domain,Workgroup "
                 "| ConvertTo-Json"
@@ -58,7 +58,7 @@ class DeviceIdentityCollector(BaseCollector):
 
         azure_ad_device_id = None
         try:
-            output = run_powershell("dsregcmd /status")
+            output = _utils.run_powershell("dsregcmd /status")
             for line in output.splitlines():
                 if "DeviceId" in line and ":" in line:
                     azure_ad_device_id = line.split(":", 1)[1].strip()

@@ -26,6 +26,7 @@ def parse_args(argv=None) -> argparse.Namespace:
             "Examples:\n"
             "  python main.py\n"
             "  python main.py --format json --output snap\n"
+            "  python main.py --dry-run\n"
             "  python main.py --mode post --post-url https://server/api --api-key TOKEN\n"
             "  python main.py --mode share --share-path \\\\server\\reports\n"
         ),
@@ -70,6 +71,15 @@ def parse_args(argv=None) -> argparse.Namespace:
         help="Write compact JSON instead of indented output",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip all privileged/external commands (PowerShell, netsh). "
+            "Registry and psutil reads still run. Useful for testing."
+        ),
+    )
+    parser.add_argument(
         "--version", "-v",
         action="version",
         version=f"it-snapshot {__version__}",
@@ -80,60 +90,62 @@ def parse_args(argv=None) -> argparse.Namespace:
 # ── output path resolution ────────────────────────────────────────────────────
 
 def _resolve_paths(output_arg: str) -> tuple[Path, Path]:
-    """Return (json_path, html_path) from --output value."""
     p = Path(output_arg)
     stem = p.with_suffix("") if p.suffix.lower() in (".json", ".html") else p
     return stem.with_suffix(".json"), stem.with_suffix(".html")
 
 
-# ── legacy v1 collector helpers ───────────────────────────────────────────────
+# ── legacy v1 OS helper ───────────────────────────────────────────────────────
 
 def _collect_legacy_os() -> dict:
-    uname = platform.uname()
     import psutil
+    uname    = platform.uname()
     cpu_freq = psutil.cpu_freq()
-    ram = psutil.virtual_memory()
+    ram      = psutil.virtual_memory()
     return {
         "hostname": socket.gethostname(),
         "os": {
-            "name": uname.system,
+            "name":    uname.system,
             "version": uname.version,
             "release": uname.release,
-            "build": platform.version(),
+            "build":   platform.version(),
         },
         "architecture": uname.machine,
-        "processor": uname.processor or platform.processor(),
+        "processor":    uname.processor or platform.processor(),
         "cpu": {
-            "physical_cores": psutil.cpu_count(logical=False),
-            "logical_cores": psutil.cpu_count(logical=True),
-            "max_frequency_mhz": round(cpu_freq.max, 2) if cpu_freq else None,
+            "physical_cores":       psutil.cpu_count(logical=False),
+            "logical_cores":        psutil.cpu_count(logical=True),
+            "max_frequency_mhz":    round(cpu_freq.max,     2) if cpu_freq else None,
             "current_frequency_mhz": round(cpu_freq.current, 2) if cpu_freq else None,
         },
         "ram": {
-            "total_gb": round(ram.total / (1024 ** 3), 2),
-            "available_gb": round(ram.available / (1024 ** 3), 2),
-            "used_gb": round(ram.used / (1024 ** 3), 2),
-            "percent_used": ram.percent,
+            "total_gb":      round(ram.total     / (1024 ** 3), 2),
+            "available_gb":  round(ram.available / (1024 ** 3), 2),
+            "used_gb":       round(ram.used      / (1024 ** 3), 2),
+            "percent_used":  ram.percent,
         },
         "python_version": platform.python_version(),
-        "current_user": os.environ.get("USERNAME") or os.environ.get("USER", "unknown"),
+        "current_user":   os.environ.get("USERNAME") or os.environ.get("USER", "unknown"),
     }
 
 
 # ── platform collector factory ────────────────────────────────────────────────
 
 def _load_platform_collectors():
-    """Return platform-specific collector instances."""
     if sys.platform == "win32":
         from .collectors.windows.device_identity import DeviceIdentityCollector
-        from .collectors.windows.hardware import HardwareCollector as WinHW
-        from .collectors.windows.software import SoftwareCollector
-        from .collectors.windows.security import SecurityCollector
-        from .collectors.windows.network import NetworkCollector as WinNet
-        from .collectors.windows.logs import LogsCollector
+        from .collectors.windows.hardware        import HardwareCollector     as WinHW
+        from .collectors.windows.storage         import StorageCollector      as WinStorage
+        from .collectors.windows.os_info         import OsInfoCollector
+        from .collectors.windows.software        import SoftwareCollector
+        from .collectors.windows.security        import SecurityCollector
+        from .collectors.windows.network         import NetworkCollector      as WinNet
+        from .collectors.windows.logs            import LogsCollector
         return [
             ("device_identity", DeviceIdentityCollector()),
             ("_win_hardware",   WinHW()),
+            ("_win_storage",    WinStorage()),
+            ("os_detail",       OsInfoCollector()),
             ("software",        SoftwareCollector()),
             ("security",        SecurityCollector()),
             ("_win_network",    WinNet()),
@@ -141,11 +153,11 @@ def _load_platform_collectors():
         ]
     elif sys.platform == "darwin":
         from .collectors.macos.device_identity import DeviceIdentityCollector
-        from .collectors.macos.hardware import HardwareCollector as MacHW
-        from .collectors.macos.software import SoftwareCollector
-        from .collectors.macos.security import SecurityCollector
-        from .collectors.macos.network import NetworkCollector as MacNet
-        from .collectors.macos.logs import LogsCollector
+        from .collectors.macos.hardware        import HardwareCollector as MacHW
+        from .collectors.macos.software        import SoftwareCollector
+        from .collectors.macos.security        import SecurityCollector
+        from .collectors.macos.network         import NetworkCollector  as MacNet
+        from .collectors.macos.logs            import LogsCollector
         return [
             ("device_identity", DeviceIdentityCollector()),
             ("_mac_hardware",   MacHW()),
@@ -154,82 +166,100 @@ def _load_platform_collectors():
             ("_mac_network",    MacNet()),
             ("logs",            LogsCollector()),
         ]
-    else:
-        return []
+    return []
 
 
 # ── report assembly ───────────────────────────────────────────────────────────
 
 def _assemble_report(
-    common_hw: dict,
+    common_hw:      dict,
     common_storage: dict,
-    common_net: dict,
-    uptime: dict,
+    common_net:     dict,
+    uptime:         dict,
     platform_results: dict,
-    legacy_os: dict,
-    all_errors: list[str],
+    legacy_os:      dict,
+    all_errors:     list[str],
 ) -> dict:
     from .report.findings import compute_findings
 
     now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    # Merge hardware: common psutil + platform-specific GPU/BIOS/mobo
-    hw_section = {
-        "cpu": common_hw.get("cpu"),
-        "ram": common_hw.get("ram"),
-        "gpu": [],
-        "bios": {},
-        "motherboard": {},
-    }
-    for key in ("_win_hardware", "_mac_hardware"):
-        plat_hw = platform_results.get(key, {})
-        if plat_hw:
-            hw_section["gpu"] = plat_hw.get("gpu", [])
-            hw_section["bios"] = plat_hw.get("bios", {})
-            hw_section["motherboard"] = plat_hw.get("motherboard", {})
+    # ── Hardware: merge common psutil data with Windows-specific CIM detail ──
+    win_hw   = platform_results.get("_win_hardware", {})
+    mac_hw   = platform_results.get("_mac_hardware", {})
+    plat_hw  = win_hw or mac_hw
 
-    # Merge network: common psutil interfaces + platform DNS/gateway
-    net_section = {
-        "interfaces": common_net.get("interfaces", []),
-        "dns_servers": [],
-        "default_gateway": None,
-    }
-    for key in ("_win_network", "_mac_network"):
-        plat_net = platform_results.get(key, {})
-        if plat_net:
-            net_section["dns_servers"] = plat_net.get("dns_servers", [])
-            net_section["default_gateway"] = plat_net.get("default_gateway")
+    common_cpu = common_hw.get("cpu") or {}
+    common_ram = common_hw.get("ram") or {}
+    plat_cpu   = plat_hw.get("cpu")   or {}
+    plat_ram   = plat_hw.get("ram")   or {}
 
-    storage_list = common_storage.get("partitions", [])
+    hw_section: dict = {
+        # psutil as base; CIM values fill in name/manufacturer and override cores/clocks
+        "cpu": {**common_cpu, **plat_cpu},
+        # psutil for usage/totals; CIM adds module list
+        "ram": {**common_ram, **plat_ram},
+        "gpu":          plat_hw.get("gpu",         []),
+        "motherboard":  plat_hw.get("motherboard",  {}),
+        "bios":         plat_hw.get("bios",         {}),
+        "tpm":          plat_hw.get("tpm",          {}),
+        "secure_boot":  plat_hw.get("secure_boot",  {}),
+        "monitors":     plat_hw.get("monitors",     []),
+        "printers":     plat_hw.get("printers",     []),
+    }
+
+    # ── Storage: prefer Windows-specific (has physical disks + BitLocker) ────
+    win_storage  = platform_results.get("_win_storage", {})
+    storage_list = (
+        win_storage.get("logical_volumes")
+        if win_storage
+        else common_storage.get("partitions", [])
+    )
+    physical_disks = win_storage.get("physical_disks", []) if win_storage else []
+
+    # ── Network: common psutil interfaces + Windows-specific adapter detail ──
+    win_net = platform_results.get("_win_network", {})
+    mac_net = platform_results.get("_mac_network", {})
+    plat_net = win_net or mac_net
+
+    net_section: dict = {
+        "interfaces":      common_net.get("interfaces", []),
+        "adapters":        plat_net.get("adapters",        []),   # richer than interfaces
+        "wifi_ssid":       plat_net.get("wifi_ssid"),
+        "dns_servers":     plat_net.get("dns_servers",     []),
+        "default_gateway": plat_net.get("default_gateway"),
+    }
 
     report: dict = {
         "schema_version": "2.0",
-        "agent_version": __version__,
-        "run_id": str(uuid.uuid4()),
-        "collected_at": now_utc,
+        "agent_version":  __version__,
+        "run_id":         str(uuid.uuid4()),
+        "collected_at":   now_utc,
         # v2 sections
         "device_identity": platform_results.get("device_identity", {}),
-        "hardware": hw_section,
-        "storage": storage_list,
-        "network": net_section,
-        "software": platform_results.get("software", {"installed": [], "count": 0}),
-        "security": platform_results.get("security", {}),
-        "logs": platform_results.get("logs", {}),
-        "findings": [],
-        "risk_score": {"score": 0, "level": "low", "factors": []},
-        "errors": all_errors,
+        "hardware":        hw_section,
+        "physical_disks":  physical_disks,
+        "storage":         storage_list,
+        "network":         net_section,
+        "os_detail":       platform_results.get("os_detail", {}),
+        "software":        platform_results.get("software", {"installed": [], "count": 0}),
+        "security":        platform_results.get("security", {}),
+        "logs":            platform_results.get("logs", {}),
+        "findings":        [],
+        "risk_score":      {"score": 0, "level": "low", "factors": []},
+        "errors":          all_errors,
         # Legacy v1 keys (exact same shape as v1)
         "snapshot": {
             "generated_at_utc": uptime.get("snapshot_utc", now_utc),
-            "tool_version": __version__,
+            "tool_version":     __version__,
         },
-        "os": legacy_os,
+        "os":    legacy_os,
         "reboot": uptime,
-        "disks": storage_list,
+        "disks":  storage_list,
     }
 
     findings, risk_score = compute_findings(report)
-    report["findings"] = findings
+    report["findings"]   = findings
     report["risk_score"] = risk_score
 
     return report
@@ -252,7 +282,7 @@ def _post_report(report: dict, url: str, api_key: str | None) -> None:
 
 def _share_report(json_path: Path, share_path: str) -> None:
     try:
-        dest = Path(share_path)
+        dest   = Path(share_path)
         dest.mkdir(parents=True, exist_ok=True)
         target = dest / json_path.name
         shutil.copy(str(json_path), str(target))
@@ -273,19 +303,25 @@ def run(argv=None) -> None:
         print("[error] --share-path is required when --mode=share", file=sys.stderr)
         sys.exit(1)
 
+    # Apply dry-run flag before any collector imports
+    if args.dry_run and sys.platform == "win32":
+        from .collectors.windows import _utils
+        _utils.DRY_RUN = True
+        print("[it-snapshot] DRY-RUN mode: PowerShell and external commands are stubbed.")
+
     json_path, html_path = _resolve_paths(args.output)
     pretty = not args.no_pretty
 
     print("[it-snapshot] Collecting system information...")
 
     from .collectors.common.hardware import HardwareCollector
-    from .collectors.common.storage import StorageCollector
-    from .collectors.common.network import NetworkCollector
-    from .collectors.common.uptime import UptimeCollector
+    from .collectors.common.storage  import StorageCollector
+    from .collectors.common.network  import NetworkCollector
+    from .collectors.common.uptime   import UptimeCollector
 
     all_errors: list[str] = []
 
-    # Common collectors
+    # Common collectors (psutil — always run)
     common_hw_result   = HardwareCollector().collect()
     common_stor_result = StorageCollector().collect()
     common_net_result  = NetworkCollector().collect()
@@ -294,7 +330,7 @@ def run(argv=None) -> None:
     for r in (common_hw_result, common_stor_result, common_net_result, uptime_result):
         all_errors.extend(r.errors)
 
-    # Legacy OS info
+    # Legacy OS info (always run)
     legacy_os: dict = {}
     try:
         print("  - OS info...", end=" ", flush=True)
@@ -306,7 +342,7 @@ def run(argv=None) -> None:
 
     # Platform-specific collectors
     platform_collectors = _load_platform_collectors()
-    platform_results: dict = {}
+    platform_results:   dict = {}
 
     for label, collector in platform_collectors:
         display = label.lstrip("_")
@@ -349,13 +385,19 @@ def run(argv=None) -> None:
     elif args.mode == "share":
         _share_report(json_path, args.share_path)
 
-    # Summary
-    risk = report.get("risk_score", {})
+    # Summary line
+    risk           = report.get("risk_score", {})
     findings_count = len(report.get("findings", []))
-    errors_count = len(all_errors)
+    errors_count   = len(all_errors)
+    admin_note     = ""
+    if sys.platform == "win32":
+        from .collectors.windows._utils import is_admin
+        if not is_admin():
+            admin_note = " (not admin: some data skipped)"
+
     print(
         f"\n[it-snapshot] Done. "
         f"Risk: {risk.get('level','?').upper()} ({risk.get('score',0)}/100) | "
         f"Findings: {findings_count} | "
-        f"Collection errors: {errors_count}"
+        f"Collection errors: {errors_count}{admin_note}"
     )
