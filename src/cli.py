@@ -139,6 +139,7 @@ def _load_platform_collectors():
         from .collectors.windows.os_info         import OsInfoCollector
         from .collectors.windows.software        import SoftwareCollector
         from .collectors.windows.security        import SecurityCollector
+        from .collectors.windows.antivirus       import AntivirusCollector
         from .collectors.windows.network         import NetworkCollector      as WinNet
         from .collectors.windows.logs            import LogsCollector
         return [
@@ -148,6 +149,7 @@ def _load_platform_collectors():
             ("os_detail",       OsInfoCollector()),
             ("software",        SoftwareCollector()),
             ("security",        SecurityCollector()),
+            ("_antivirus",      AntivirusCollector()),
             ("_win_network",    WinNet()),
             ("logs",            LogsCollector()),
         ]
@@ -237,6 +239,17 @@ def _assemble_report(
         "dns_servers":     plat_net.get("dns_servers",     []),
         "default_gateway": plat_net.get("default_gateway"),
     }
+
+    # Merge dedicated antivirus collector output into the security section.
+    # This overwrites the basic AV list from SecurityCollector with the richer
+    # data (exe_path, timestamp, detailed Defender telemetry).
+    antivirus_data = platform_results.get("_antivirus") or {}
+    if antivirus_data:
+        sec = platform_results.setdefault("security", {})
+        if antivirus_data.get("products") is not None:
+            sec["antivirus"] = antivirus_data["products"]
+        if antivirus_data.get("defender"):
+            sec["windows_defender"] = antivirus_data["defender"]
 
     report: dict = {
         "schema_version": "2.0",

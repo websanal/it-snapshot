@@ -93,6 +93,8 @@ class AntiVirusItem(BaseModel):
     enabled: Optional[bool] = None
     up_to_date: Optional[bool] = None
     product_state: Optional[int] = None
+    exe_path: Optional[str] = None
+    timestamp: Optional[str] = None
 
 
 class FirewallStatus(BaseModel):
@@ -109,7 +111,14 @@ class EncryptionStatus(BaseModel):
 class DefenderStatus(BaseModel):
     enabled: Optional[bool] = None
     real_time_protection: Optional[bool] = None
+    on_access_protection: Optional[bool] = None
+    behavior_monitor: Optional[bool] = None
     signatures_last_updated: Optional[str] = None
+    signature_version: Optional[str] = None
+    engine_version: Optional[str] = None
+    product_version: Optional[str] = None
+    last_full_scan: Optional[str] = None
+    last_quick_scan: Optional[str] = None
 
 
 class SecuritySection(BaseModel):
