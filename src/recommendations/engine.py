@@ -94,10 +94,11 @@ def _check_antivirus(report: dict) -> list[dict]:
 
 
 def _check_startup(report: dict) -> list[dict]:
-    """Warning if more than 8 startup registry entries are present."""
-    software = report.get("software") or {}
-    # v2: software.startup_entries; fall back to top-level startup key
-    entries = software.get("startup_entries") or report.get("startup") or None
+    """Warning if more than 8 startup items are present."""
+    startup = report.get("startup") or {}
+    # Prefer dedicated startup section (entries only, not scheduled tasks).
+    # Fall back to software.startup_entries for backward compatibility.
+    entries = startup.get("entries") or (report.get("software") or {}).get("startup_entries")
     if entries is None:
         return []
     count = len(entries)

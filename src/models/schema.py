@@ -169,6 +169,30 @@ class RiskScore(BaseModel):
     factors: list[str] = []
 
 
+class StartupEntry(BaseModel):
+    name: Optional[str] = None
+    command: Optional[str] = None
+    location: Optional[str] = None
+    type: Optional[str] = None        # registry_run | registry_runonce | startup_folder
+    enabled: Optional[bool] = None
+
+
+class ScheduledStartupTask(BaseModel):
+    name: Optional[str] = None
+    path: Optional[str] = None
+    state: Optional[str] = None
+    trigger_type: Optional[str] = None   # LogonTrigger | BootTrigger
+    last_run: Optional[str] = None
+    next_run: Optional[str] = None
+
+
+class StartupSection(BaseModel):
+    count: int = 0
+    entries: list[StartupEntry] = []
+    scheduled_tasks: list[ScheduledStartupTask] = []
+    count_by_type: dict[str, int] = {}
+
+
 class Recommendation(BaseModel):
     severity: str      # info | warning | critical
     title: str
@@ -191,6 +215,7 @@ class SnapshotReport(BaseModel):
     storage: list[StorageVolume] = []
     network: NetworkSection = NetworkSection()
     software: SoftwareSection = SoftwareSection()
+    startup: StartupSection = StartupSection()
     security: SecuritySection = SecuritySection()
     logs: LogsSection = LogsSection()
     findings: list[Finding] = []

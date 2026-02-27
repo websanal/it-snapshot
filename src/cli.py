@@ -140,6 +140,7 @@ def _load_platform_collectors():
         from .collectors.windows.software        import SoftwareCollector
         from .collectors.windows.security        import SecurityCollector
         from .collectors.windows.antivirus       import AntivirusCollector
+        from .collectors.windows.startup         import StartupCollector
         from .collectors.windows.network         import NetworkCollector      as WinNet
         from .collectors.windows.logs            import LogsCollector
         return [
@@ -150,6 +151,7 @@ def _load_platform_collectors():
             ("software",        SoftwareCollector()),
             ("security",        SecurityCollector()),
             ("_antivirus",      AntivirusCollector()),
+            ("_startup",        StartupCollector()),
             ("_win_network",    WinNet()),
             ("logs",            LogsCollector()),
         ]
@@ -240,6 +242,14 @@ def _assemble_report(
         "default_gateway": plat_net.get("default_gateway"),
     }
 
+    # Merge dedicated startup collector output.
+    # Expose as top-level "startup" key and keep software.startup_entries in sync
+    # so the recommendations engine and any existing consumers still work.
+    startup_data = platform_results.get("_startup") or {}
+    if startup_data:
+        sw = platform_results.setdefault("software", {})
+        sw["startup_entries"] = startup_data.get("entries", [])
+
     # Merge dedicated antivirus collector output into the security section.
     # This overwrites the basic AV list from SecurityCollector with the richer
     # data (exe_path, timestamp, detailed Defender telemetry).
@@ -264,6 +274,7 @@ def _assemble_report(
         "network":         net_section,
         "os_detail":       platform_results.get("os_detail", {}),
         "software":        platform_results.get("software", {"installed": [], "count": 0}),
+        "startup":         platform_results.get("_startup", {}),
         "security":        platform_results.get("security", {}),
         "logs":            platform_results.get("logs", {}),
         "findings":        [],
