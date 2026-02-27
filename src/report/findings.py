@@ -1,5 +1,7 @@
 """Findings engine and risk scoring for it-snapshot v2."""
 
+from .unwanted_software import match_installed
+
 _SEVERITY_WEIGHTS = {"low": 5, "medium": 15, "high": 30, "critical": 50}
 
 
@@ -79,6 +81,19 @@ def compute_findings(report: dict) -> tuple[list[dict], dict]:
             "severity": "medium",
             "title": "System uptime exceeds 30 days",
             "detail": f"System has been running for {uptime_days} days without a reboot.",
+        })
+
+    # SWU-001: Unwanted software detected
+    installed = (report.get("software") or {}).get("installed", [])
+    for match in match_installed(installed):
+        findings.append({
+            "id":       "SWU-001",
+            "severity": match["severity"],
+            "title":    f"Unwanted software detected: {match['installed_name']}",
+            "detail":   (
+                f"Matched pattern '{match['pattern']}' "
+                f"[{match['category']}]: {match['reason']}"
+            ),
         })
 
     # SYS-002: Disk nearly/critically full

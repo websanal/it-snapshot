@@ -1,0 +1,174 @@
+# =============================================================================
+# it-snapshot - Unwanted Software Detection List
+# =============================================================================
+#
+# Each entry defines ONE pattern to match against installed software names.
+#
+# Matching rules
+# --------------
+# - Case-insensitive substring match.
+# - "AnyDesk" matches "AnyDesk 7.0.1", "AnyDesk (64-bit)", etc.
+# - Patterns are checked against the full display name as reported by Windows.
+#
+# Required fields
+# ---------------
+#   name     : substring to search for in the software name
+#   category : label shown in the finding (e.g. "Remote Access")
+#   reason   : one-line explanation shown in the finding detail
+#
+# Optional fields
+# ---------------
+#   severity : low | medium | high  (default: medium)
+#
+# How to add a new entry
+# ----------------------
+# Append a block under "patterns:" following the same format:
+#
+#   - name: "MyApp"
+#     category: "Category Name"
+#     reason: "Brief explanation of why this software is flagged"
+#     severity: medium
+#
+# How to disable an entry without deleting it
+# -------------------------------------------
+# Comment out the block with # or remove it entirely.
+# =============================================================================
+
+patterns:
+
+  # ── Remote Access ────────────────────────────────────────────────────────────
+  - name: "TeamViewer"
+    category: "Remote Access"
+    reason: "Remote desktop tool - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "AnyDesk"
+    category: "Remote Access"
+    reason: "Remote desktop tool - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "LogMeIn"
+    category: "Remote Access"
+    reason: "Cloud remote-access service - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "Ammyy Admin"
+    category: "Remote Access"
+    reason: "Remote administration tool frequently abused in support scams"
+    severity: high
+
+  - name: "RemotePC"
+    category: "Remote Access"
+    reason: "Remote desktop tool - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "ScreenConnect"
+    category: "Remote Access"
+    reason: "Remote support tool - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "Splashtop"
+    category: "Remote Access"
+    reason: "Remote desktop tool - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "UltraVNC"
+    category: "Remote Access"
+    reason: "VNC remote-control software - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "TightVNC"
+    category: "Remote Access"
+    reason: "VNC remote-control software - verify it is explicitly authorized"
+    severity: medium
+
+  - name: "RealVNC"
+    category: "Remote Access"
+    reason: "VNC remote-control software - verify it is explicitly authorized"
+    severity: medium
+
+  # ── Torrent / P2P ────────────────────────────────────────────────────────────
+  - name: "BitTorrent"
+    category: "Torrent / P2P"
+    reason: "Peer-to-peer file sharing - data leakage and copyright risk"
+    severity: medium
+
+  - name: "uTorrent"
+    category: "Torrent / P2P"
+    reason: "Peer-to-peer file sharing - data leakage and copyright risk"
+    severity: medium
+
+  - name: "qBittorrent"
+    category: "Torrent / P2P"
+    reason: "Peer-to-peer file sharing - data leakage and copyright risk"
+    severity: medium
+
+  - name: "Vuze"
+    category: "Torrent / P2P"
+    reason: "Peer-to-peer file sharing - data leakage and copyright risk"
+    severity: medium
+
+  - name: "Deluge"
+    category: "Torrent / P2P"
+    reason: "Peer-to-peer file sharing - data leakage and copyright risk"
+    severity: medium
+
+  # ── Cryptocurrency Mining ─────────────────────────────────────────────────────
+  - name: "NiceHash"
+    category: "Crypto Mining"
+    reason: "Cryptocurrency mining software - consumes resources, may indicate compromise"
+    severity: high
+
+  - name: "CGMiner"
+    category: "Crypto Mining"
+    reason: "Cryptocurrency mining software - consumes resources, may indicate compromise"
+    severity: high
+
+  - name: "XMRig"
+    category: "Crypto Mining"
+    reason: "Monero miner - commonly deployed by malware"
+    severity: high
+
+  # ── Adware / Unwanted Browser Tools ──────────────────────────────────────────
+  - name: "Ask Toolbar"
+    category: "Adware"
+    reason: "Browser toolbar known to change search settings without consent"
+    severity: low
+
+  - name: "Conduit"
+    category: "Adware"
+    reason: "Browser hijacker - changes homepage and search engine"
+    severity: low
+
+  - name: "Babylon"
+    category: "Adware"
+    reason: "Browser toolbar known to change search settings without consent"
+    severity: low
+
+  - name: "Search Protect"
+    category: "Adware"
+    reason: "Browser protection tool bundled with adware"
+    severity: low
+
+  # ── Hacking / Penetration-Testing Tools ──────────────────────────────────────
+  # Flag these on standard endpoints; expected on security workstations.
+  - name: "Metasploit"
+    category: "Hacking Tool"
+    reason: "Penetration-testing framework - not expected on standard endpoints"
+    severity: high
+
+  - name: "Burp Suite"
+    category: "Hacking Tool"
+    reason: "Web security testing proxy - not expected on standard endpoints"
+    severity: high
+
+  - name: "Aircrack"
+    category: "Hacking Tool"
+    reason: "Wi-Fi password cracking tool - not expected on standard endpoints"
+    severity: high
+
+  # ── Unauthorized Media Tools ──────────────────────────────────────────────────
+  - name: "Popcorn Time"
+    category: "Unauthorized Media"
+    reason: "Streams pirated content - legal and malware risk"
+    severity: medium
