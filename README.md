@@ -290,11 +290,11 @@ The agent automatically evaluates the collected data against a set of rules and 
 
 ```
 it-snapshot/
-├── src/
+├── src/                              # Agent source
 │   ├── __init__.py                   # version = "2.0.0"
 │   ├── cli.py                        # Argument parsing & orchestration
 │   ├── config/
-│   │   ├── agent_config.py           # Config loader (UNC / local / env-var resolution + caching)
+│   │   ├── agent_config.py           # Config loader (UNC / local / env-var + caching)
 │   │   └── run_state.py              # Run-interval gate & last-run timestamp
 │   ├── collectors/
 │   │   ├── base.py                   # BaseCollector + CollectorResult
@@ -314,10 +314,31 @@ it-snapshot/
 │       ├── unwanted_software.py      # YAML-based unwanted software matcher
 │       ├── json_reporter.py          # JSON output
 │       └── html_reporter.py          # Self-contained HTML output
+├── server/                           # Central inventory server
+│   ├── main.py                       # FastAPI app + admin UI
+│   ├── auth.py                       # X-API-Key dependency
+│   ├── db.py                         # SQLite init & connection helper
+│   ├── models.py                     # Pydantic request / response models
+│   ├── routers/
+│   │   ├── ingest.py                 # POST /ingest
+│   │   └── devices.py                # GET /devices, /latest, /reports
+│   ├── requirements.txt              # fastapi, uvicorn, aiosqlite, pydantic
+│   └── Dockerfile
+├── packaging/
+│   └── windows/                      # WiX v4 MSI project
+│       ├── it-snapshot.wxs
+│       ├── ITSnapshotAgent.xml       # Scheduled task XML
+│       └── agent.yaml                # Default config installed by MSI
+├── enterprise-config/                # Reference files for UNC file server
+│   ├── agent.example.yaml
+│   ├── unwanted_apps.yaml
+│   └── README.md
 ├── config/
-│   └── unwanted_apps.yaml            # Unwanted software pattern list
-├── main.py                           # Entry point
-├── requirements.txt                  # psutil, pydantic, pyyaml, requests
+│   └── unwanted_apps.yaml            # Built-in unwanted software pattern list
+├── docker-compose.yml                # Runs the inventory server
+├── .env.example                      # Template for IT_SNAPSHOT_API_KEY
+├── main.py                           # Agent entry point
+├── requirements.txt                  # Agent: psutil, pydantic, pyyaml, requests
 └── README.md
 ```
 
@@ -333,6 +354,135 @@ pytest tests/ -v
 77 tests cover the findings engine, Pydantic schema validation, and Windows collector JSON parsing (all PowerShell calls are mocked — no elevated privileges required).
 
 ---
+
+---
+
+## Central inventory server
+
+The `server/` directory contains a FastAPI-based inventory server that receives
+reports from all agents and stores them in SQLite. It exposes a REST API and a
+browser admin UI.
+
+### API endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/ingest` | Accept a report from an agent (requires `X-API-Key` header) |
+| `GET`  | `/devices` | List all known devices |
+| `GET`  | `/devices/{id}/latest` | Full latest report for a device |
+| `GET`  | `/devices/{id}/reports?limit=50` | Report history (summaries only) |
+| `GET`  | `/health` | Health check (no auth) |
+| `GET`  | `/docs` | Interactive OpenAPI docs (Swagger UI) |
+| `GET`  | `/redoc` | ReDoc API reference |
+| `GET`  | `/admin` | Browser admin UI |
+
+All endpoints except `/health` require the `X-API-Key` request header.
+
+### Quick start with Docker Compose
+
+```bash
+# 1. Generate a strong API key and put it in .env
+cp .env.example .env
+python -c "import secrets; print('IT_SNAPSHOT_API_KEY=' + secrets.token_urlsafe(32))" >> .env
+# (or edit .env manually and set IT_SNAPSHOT_API_KEY)
+
+# 2. Start the server
+docker compose up -d
+
+# 3. Verify
+curl http://localhost:8000/health
+# {"status":"ok"}
+
+# 4. Open the admin UI
+# http://localhost:8000/admin  (enter your API key in the toolbar)
+
+# 5. Open the interactive API docs
+# http://localhost:8000/docs
+```
+
+The SQLite database is stored in a named Docker volume (`inventory_data`) and
+survives container restarts and image upgrades.
+
+### Running without Docker
+
+```bash
+cd server
+pip install -r requirements.txt
+export IT_SNAPSHOT_API_KEY="your-secret-key"
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+### Configuring agents to POST reports
+
+In the agent config file (`agent.yaml`) on each endpoint, set:
+
+```yaml
+mode: post
+post_url: https://it-management.corp.example.com/api/ingest
+api_key:  your-secret-key
+```
+
+> Replace `it-management.corp.example.com` with the DNS name or IP of your
+> server host.  If you run behind a reverse proxy (nginx, Caddy) make sure TLS
+> is terminated there — agents should use `https://` in production.
+
+Or pass the values on the command line:
+
+```cmd
+python main.py --mode post ^
+               --post-url https://inventory.corp.example.com/ingest ^
+               --api-key  your-secret-key
+```
+
+### Deploying on a domain — recommended pattern
+
+1. **Run the server** on any always-on Linux host (VM, bare metal, or a Docker
+   host) reachable from all managed endpoints.
+
+2. **Set the agent config** centrally on the UNC share
+   (`\\fileserver\it-snapshot$\config\agent.yaml`):
+
+   ```yaml
+   mode: post
+   post_url: https://inventory.corp.example.com/ingest
+   api_key:  your-secret-key
+   intervals:
+     min_hours_between_runs: 24
+   ```
+
+3. **Push the agent** to endpoints via GPO Software Installation (MSI) or a
+   login script. With the UNC config in place, every machine automatically
+   picks it up — no per-machine configuration needed.
+
+4. **Monitor** from the admin UI at `https://inventory.corp.example.com/admin`
+   or query the API directly from your SIEM / ITSM tooling.
+
+### Admin UI
+
+Open `http://<server>:8000/admin` in a browser. Enter your API key in the
+toolbar — it is stored only in `sessionStorage` (cleared when the tab closes)
+and sent in the `X-API-Key` header directly from your browser to the server.
+
+The UI shows:
+- Device count, critical-risk count, and high-risk count
+- Sortable device table with hostname, domain, OS, last-seen time, and risk level
+- "Latest report" button per device that opens the full raw JSON in a modal
+
+### Database
+
+SQLite is used for the MVP. The database file path defaults to
+`/data/db.sqlite` inside the Docker container (mapped to the `inventory_data`
+named volume). Override with the `IT_SNAPSHOT_DB` environment variable.
+
+**Schema:**
+
+```sql
+devices(id, hostname, domain, last_seen, os_name, os_version, risk_score)
+reports(id, device_id, collected_at, risk_score, findings_json, raw_json, ingested_at)
+```
+
+- `devices` is an upsert table — one row per `(hostname, domain)`.
+- `reports` is append-only — every ingest creates a new row, keeping full history.
 
 ---
 

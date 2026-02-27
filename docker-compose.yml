@@ -1,0 +1,30 @@
+services:
+  server:
+    build: ./server
+    container_name: it-snapshot-server
+    ports:
+      - "8000:8000"
+    environment:
+      # REQUIRED: shared secret that agents must send in the X-API-Key header.
+      # Set in a .env file (never commit the actual value):
+      #   echo "IT_SNAPSHOT_API_KEY=your-secret-here" > .env
+      IT_SNAPSHOT_API_KEY: "${IT_SNAPSHOT_API_KEY:?Set IT_SNAPSHOT_API_KEY in .env}"
+      IT_SNAPSHOT_DB: "/data/db.sqlite"
+    volumes:
+      # Named volume keeps the SQLite database across container restarts / upgrades.
+      - inventory_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  inventory_data:
+    driver: local
