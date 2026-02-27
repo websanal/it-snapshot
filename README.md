@@ -102,15 +102,110 @@ python main.py --help
 
 | Flag | Default | Description |
 |---|---|---|
+| `--config` | auto | Path to an agent config YAML file (see [Enterprise deployment](#enterprise-deployment)) |
 | `--output`, `-o` | `report` | Base path for output files (`report` → `report.json` + `report.html`) |
 | `--format` | `both` | Output format: `json`, `html`, or `both` |
 | `--mode` | `local` | Delivery mode: `local`, `post`, or `share` |
 | `--post-url` | — | URL to POST the JSON report to (required with `--mode=post`) |
 | `--api-key` | — | Bearer token for the Authorization header when posting |
 | `--share-path` | — | UNC or local path to copy the JSON to (required with `--mode=share`) |
+| `--maintenance` | — | Generate a maintenance plan: `plan` → writes `maintenance_plan.json` |
 | `--dry-run` | false | Skip privileged / external commands; return empty stubs (useful for testing) |
 | `--no-pretty` | false | Write compact JSON without indentation |
 | `--version`, `-v` | — | Show version and exit |
+
+---
+
+## Enterprise deployment
+
+### Agent configuration file
+
+For fleet deployments you can place a YAML config file in a central location
+instead of passing CLI flags to every machine individually. The agent resolves
+the config using the following priority order (first match wins):
+
+1. `--config <path>` CLI flag
+2. `IT_SNAPSHOT_CONFIG` environment variable (full path to YAML file)
+3. UNC path: `\\<IT_SNAPSHOT_UNC_SERVER>\it-snapshot$\config\agent.yaml` (Windows only — set `IT_SNAPSHOT_UNC_SERVER` to your file server hostname)
+4. Local fallback: `%PROGRAMDATA%\it-snapshot\agent.yaml` (Windows) or `/Library/Application Support/it-snapshot/agent.yaml` (macOS)
+
+**UNC caching** — when a UNC config is successfully read it is copied to the
+local fallback path. If the file server is unreachable on a subsequent run the
+agent falls back to this cached copy automatically.
+
+#### Full config reference (`agent.yaml`)
+
+```yaml
+# Delivery mode: local | post | share
+# Equivalent to --mode. CLI flag takes priority.
+mode: local
+
+# POST delivery (mode: post)
+post_url: https://it-management.corp.example.com/api/snapshots
+api_key:  YOUR_BEARER_TOKEN
+
+# Share delivery (mode: share)
+# %COMPUTERNAME% is expanded to the machine hostname at runtime.
+share_path: \\fileserver\it-snapshot$\reports\%COMPUTERNAME%
+
+# Output directory for local mode.
+# %COMPUTERNAME% expansion supported.
+output_dir: C:\IT\snapshots\%COMPUTERNAME%
+
+# What to collect
+collect:
+  logs_level: warning        # minimum event level: info | warning | error | critical
+  software_list: true        # include installed software list
+  security: true             # include security / AV / firewall data
+  startup_items: true        # include startup entries and scheduled tasks
+
+# Privacy controls
+privacy:
+  sanitize_logs: false                  # strip usernames from log messages
+  truncate_event_message_len: 500       # max characters per event message (0 = unlimited)
+  mask_user_paths: false                # replace C:\Users\<name>\ with C:\Users\<user>\
+
+# Run frequency throttling
+intervals:
+  run_on_startup: false          # run automatically when the user logs in (informational)
+  min_hours_between_runs: 24     # skip the run if last run was less than N hours ago
+                                 # set to 0 to disable throttling (default)
+```
+
+> String values support `%VARNAME%` placeholder expansion using the current
+> process environment (e.g. `%COMPUTERNAME%`, `%USERNAME%`, `%PROGRAMDATA%`).
+
+### Run-interval gate
+
+When `intervals.min_hours_between_runs` is set to a positive value the agent
+stores a timestamp in `%PROGRAMDATA%\it-snapshot\run_state.json` (Windows) or
+`/Library/Application Support/it-snapshot/run_state.json` (macOS) after each
+successful run. If a subsequent invocation occurs before the minimum interval
+has elapsed the agent prints a message and exits with code `0` without
+collecting or writing any files.
+
+This is useful when the agent is launched from a login script and you want to
+avoid repeated collections on fast re-logins or reboots.
+
+### Typical GPO / login-script deployment (Windows)
+
+```cmd
+REM Run via Group Policy Logon Script or scheduled task
+python "\\fileserver\it-snapshot$\main.py" ^
+    --config "\\fileserver\it-snapshot$\config\agent.yaml"
+```
+
+Or without a `--config` flag — set `IT_SNAPSHOT_UNC_SERVER` as a machine
+environment variable in Group Policy and the agent resolves the UNC path
+automatically:
+
+```cmd
+REM Computer Configuration > Preferences > Environment
+IT_SNAPSHOT_UNC_SERVER = fileserver.corp.example.com
+
+REM Then the login script needs no --config flag:
+python "\\fileserver\it-snapshot$\main.py"
+```
 
 ---
 
@@ -198,19 +293,31 @@ it-snapshot/
 ├── src/
 │   ├── __init__.py                   # version = "2.0.0"
 │   ├── cli.py                        # Argument parsing & orchestration
+│   ├── config/
+│   │   ├── agent_config.py           # Config loader (UNC / local / env-var resolution + caching)
+│   │   └── run_state.py              # Run-interval gate & last-run timestamp
 │   ├── collectors/
 │   │   ├── base.py                   # BaseCollector + CollectorResult
 │   │   ├── common/                   # Cross-platform: hardware, storage, network, uptime
-│   │   ├── windows/                  # Windows: device_identity, hardware, storage, os_info, software, security, network, logs
+│   │   ├── windows/                  # Windows: device_identity, hardware, storage, os_info,
+│   │   │                             #   software, security, antivirus, startup, network, logs
 │   │   └── macos/                    # macOS: device_identity, hardware, software, security, network, logs
+│   ├── maintenance/
+│   │   ├── generator.py              # Maintenance plan orchestrator (--maintenance plan)
+│   │   └── analyzers/                # temp_cleanup, os_updates, startup_reduction
 │   ├── models/
 │   │   └── schema.py                 # Pydantic v2 models
+│   ├── recommendations/
+│   │   └── engine.py                 # Advisory recommendations engine
 │   └── report/
 │       ├── findings.py               # Findings engine & risk scoring
+│       ├── unwanted_software.py      # YAML-based unwanted software matcher
 │       ├── json_reporter.py          # JSON output
 │       └── html_reporter.py          # Self-contained HTML output
+├── config/
+│   └── unwanted_apps.yaml            # Unwanted software pattern list
 ├── main.py                           # Entry point
-├── requirements.txt                  # psutil, pydantic, requests
+├── requirements.txt                  # psutil, pydantic, pyyaml, requests
 └── README.md
 ```
 
@@ -231,5 +338,5 @@ pytest tests/ -v
 
 | Code | Meaning |
 |---|---|
-| `0` | Success |
-| `1` | Fatal error (report could not be written, invalid arguments) |
+| `0` | Success (or interval gate skipped the run — see `min_hours_between_runs`) |
+| `1` | Fatal error (report could not be written, invalid arguments, config file not found) |

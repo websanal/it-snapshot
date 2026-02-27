@@ -29,6 +29,19 @@ def parse_args(argv=None) -> argparse.Namespace:
             "  python main.py --dry-run\n"
             "  python main.py --mode post --post-url https://server/api --api-key TOKEN\n"
             "  python main.py --mode share --share-path \\\\server\\reports\n"
+            "  python main.py --config \\\\fileserver\\it-snapshot$\\config\\agent.yaml\n"
+        ),
+    )
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to an agent config YAML file. "
+            "If omitted, the agent searches: IT_SNAPSHOT_CONFIG env var, "
+            "then \\\\<IT_SNAPSHOT_UNC_SERVER>\\it-snapshot$\\config\\agent.yaml (Windows), "
+            "then %PROGRAMDATA%\\it-snapshot\\agent.yaml (Windows) "
+            "or /Library/Application Support/it-snapshot/agent.yaml (macOS)."
         ),
     )
     parser.add_argument(
@@ -46,8 +59,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         choices=["local", "post", "share"],
-        default="local",
-        help="Delivery mode (default: local)",
+        default=None,   # None = not set by CLI; config or built-in default applies
+        help="Delivery mode: local, post, or share (default: local)",
     )
     parser.add_argument(
         "--post-url",
@@ -97,6 +110,29 @@ def parse_args(argv=None) -> argparse.Namespace:
         version=f"it-snapshot {__version__}",
     )
     return parser.parse_args(argv)
+
+
+def _apply_config(args: argparse.Namespace, config: dict) -> None:
+    """Merge config-file values into *args* for options not set on the CLI.
+
+    CLI flags always take priority. Config values only fill in where the
+    corresponding CLI flag was not provided (i.e. is still at its default).
+    """
+    # mode: CLI default is None (not "local") so we can detect "not set"
+    if args.mode is None:
+        args.mode = config.get("mode") or "local"
+
+    # Delivery params already default to None in argparse
+    if args.post_url is None and config.get("post_url"):
+        args.post_url = config["post_url"]
+    if args.api_key is None and config.get("api_key"):
+        args.api_key = config["api_key"]
+    if args.share_path is None and config.get("share_path"):
+        args.share_path = config["share_path"]
+
+    # output_dir: apply when user did not change the default output path
+    if args.output == "report" and config.get("output_dir"):
+        args.output = config["output_dir"]
 
 
 # ── output path resolution ────────────────────────────────────────────────────
@@ -348,12 +384,33 @@ def _share_report(json_path: Path, share_path: str) -> None:
 def run(argv=None) -> None:
     args = parse_args(argv)
 
+    # ── Load agent config (UNC / local / env-var resolution) ─────────────────
+    from .config.agent_config import load_config
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as exc:
+        print(f"[error] {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # Merge config into args for anything not set on the CLI
+    _apply_config(args, config)
+
+    # ── Validate delivery args (after config merge) ────────────────────────
     if args.mode == "post" and not args.post_url:
         print("[error] --post-url is required when --mode=post", file=sys.stderr)
         sys.exit(1)
     if args.mode == "share" and not args.share_path:
         print("[error] --share-path is required when --mode=share", file=sys.stderr)
         sys.exit(1)
+
+    # ── Run-interval gate ──────────────────────────────────────────────────
+    min_hours = (config.get("intervals") or {}).get("min_hours_between_runs", 0)
+    if min_hours > 0:
+        from .config.run_state import check_interval
+        should_run, reason = check_interval(min_hours)
+        if not should_run:
+            print(f"[it-snapshot] Skipping: {reason}")
+            sys.exit(0)
 
     # Apply dry-run flag before any collector imports
     if args.dry_run:
@@ -440,6 +497,11 @@ def run(argv=None) -> None:
         _post_report(report, args.post_url, args.api_key)
     elif args.mode == "share":
         _share_report(json_path, args.share_path)
+
+    # Record successful run for interval gate
+    if min_hours > 0:
+        from .config.run_state import record_run
+        record_run()
 
     # Maintenance plan (read-only — no system changes)
     if args.maintenance == "plan":
