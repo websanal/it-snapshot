@@ -115,27 +115,98 @@ def _deep_merge(base: dict, override: dict) -> dict:
 _PLACEHOLDER_RE = re.compile(r"%([A-Za-z0-9_]+)%")
 
 
-def _expand_placeholder(value: str) -> str:
-    """Expand %VARNAME% tokens using the current process environment."""
+def _build_expansion_map() -> dict[str, str]:
+    """Build a token → value map covering Windows env vars and macOS equivalents.
+
+    Supported tokens (case-insensitive lookup not used — match exact case as
+    the OS provides):
+
+    Token               Windows source          macOS / Linux equivalent
+    ──────────────────  ──────────────────────  ──────────────────────────────
+    %COMPUTERNAME%      env COMPUTERNAME        socket.gethostname()
+    %USERNAME%          env USERNAME            env USER / getpass.getuser()
+    %USERDOMAIN%        env USERDOMAIN          env USERDOMAIN / hostname stem
+    %PROGRAMDATA%       env PROGRAMDATA         n/a (returned as-is)
+    %USERPROFILE%       env USERPROFILE         env HOME / Path.home()
+    %TEMP%              env TEMP                env TMPDIR / /tmp
+    %SYSTEMROOT%        env SystemRoot          n/a
+    (any other env var) os.environ.get(name)    os.environ.get(name)
+    """
+    import getpass
+    import socket
+    from pathlib import Path
+
+    mapping: dict[str, str] = dict(os.environ)  # start with all env vars
+
+    # Ensure COMPUTERNAME is always populated (macOS / Linux don't set it)
+    if "COMPUTERNAME" not in mapping:
+        mapping["COMPUTERNAME"] = socket.gethostname().split(".")[0].upper()
+
+    # Ensure USERNAME is always populated
+    if "USERNAME" not in mapping:
+        try:
+            mapping["USERNAME"] = getpass.getuser()
+        except Exception:
+            mapping["USERNAME"] = "unknown"
+
+    # Ensure USERDOMAIN is always populated
+    if "USERDOMAIN" not in mapping:
+        # Use the hostname stem as a reasonable stand-in on non-domain machines
+        mapping["USERDOMAIN"] = socket.gethostname().split(".")[0].upper()
+
+    # Ensure USERPROFILE / HOME are cross-populated
+    if "USERPROFILE" not in mapping and "HOME" in mapping:
+        mapping["USERPROFILE"] = mapping["HOME"]
+    if "HOME" not in mapping and "USERPROFILE" in mapping:
+        mapping["HOME"] = mapping["USERPROFILE"]
+
+    # Ensure TEMP is available
+    if "TEMP" not in mapping:
+        import tempfile
+        mapping["TEMP"] = tempfile.gettempdir()
+
+    return mapping
+
+
+def _expand_placeholder(value: str, _map: dict[str, str] | None = None) -> str:
+    """Expand %VARNAME% tokens using the platform-normalised expansion map.
+
+    Args:
+        value: String potentially containing ``%VARNAME%`` tokens.
+        _map:  Pre-built expansion map. Built lazily on first call if omitted.
+
+    Returns:
+        String with all recognised tokens replaced. Unknown tokens are left
+        unchanged (e.g. ``%UNKNOWN%`` stays ``%UNKNOWN%``).
+    """
+    if _map is None:
+        _map = _build_expansion_map()
+
     def _replace(m: re.Match) -> str:
-        return os.environ.get(m.group(1), m.group(0))
+        return _map.get(m.group(1), m.group(0))
+
     return _PLACEHOLDER_RE.sub(_replace, value)
 
 
-def _expand_strings(obj: Any) -> None:
-    """Recursively expand env-var placeholders in all string values (in-place)."""
+def _expand_strings(obj: Any, _map: dict[str, str] | None = None) -> None:
+    """Recursively expand %VARNAME% placeholders in all string values (in-place).
+
+    The expansion map is built once per call tree and reused for efficiency.
+    """
+    if _map is None:
+        _map = _build_expansion_map()
     if isinstance(obj, dict):
         for key, val in obj.items():
             if isinstance(val, str):
-                obj[key] = _expand_placeholder(val)
+                obj[key] = _expand_placeholder(val, _map)
             else:
-                _expand_strings(val)
+                _expand_strings(val, _map)
     elif isinstance(obj, list):
         for i, val in enumerate(obj):
             if isinstance(val, str):
-                obj[i] = _expand_placeholder(val)
+                obj[i] = _expand_placeholder(val, _map)
             else:
-                _expand_strings(val)
+                _expand_strings(val, _map)
 
 
 # ── public API ────────────────────────────────────────────────────────────────

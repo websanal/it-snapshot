@@ -1,0 +1,116 @@
+# =============================================================================
+# it-snapshot — Enterprise Agent Configuration Example
+# =============================================================================
+#
+# Copy this file to one of the following locations and edit to suit your
+# environment:
+#
+#   UNC (recommended for fleet):
+#     \\<fileserver>\it-snapshot$\config\agent.yaml
+#     Point agents at it by setting IT_SNAPSHOT_UNC_SERVER (see README).
+#
+#   Windows local fallback:
+#     C:\ProgramData\it-snapshot\agent.yaml
+#
+#   macOS local fallback:
+#     /Library/Application Support/it-snapshot/agent.yaml
+#
+#   Any path (all platforms):
+#     Pass --config <path> on the command line, or set IT_SNAPSHOT_CONFIG.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Placeholder expansion
+# ─────────────────────────────────────────────────────────────────────────────
+# String values support %VARNAME% tokens that are expanded at runtime.
+# The following tokens are always available regardless of platform:
+#
+#   Token              Value (example)       Source
+#   ─────────────────  ────────────────────  ──────────────────────────────────
+#   %COMPUTERNAME%     DESKTOP-ABC123        Windows: env COMPUTERNAME
+#                                            macOS/Linux: socket.gethostname()
+#   %USERNAME%         jsmith                Windows: env USERNAME
+#                                            macOS/Linux: env USER / getpass
+#   %USERDOMAIN%       CORP                  Windows: env USERDOMAIN
+#                                            macOS/Linux: hostname stem
+#   %USERPROFILE%      C:\Users\jsmith       Windows: env USERPROFILE
+#                                            macOS/Linux: env HOME / ~
+#   %PROGRAMDATA%      C:\ProgramData        Windows only (kept as-is on macOS)
+#   %TEMP%             C:\Users\...\AppData  env TEMP / TMPDIR / /tmp
+#   %SYSTEMROOT%       C:\Windows            Windows: env SystemRoot
+#   %<any env var>%    (current value)       Any variable in the process env
+#
+# Unknown tokens are left unchanged.
+# =============================================================================
+
+
+# ── Delivery mode ─────────────────────────────────────────────────────────────
+#
+# local  - write report.json + report.html to output_dir
+# post   - HTTP POST the JSON report (requires post_url)
+# share  - copy the JSON to a network path (requires share_path)
+#
+mode: local
+
+
+# ── HTTP POST delivery ────────────────────────────────────────────────────────
+# Required when mode: post
+#
+# post_url: https://it-management.corp.example.com/api/snapshots
+# api_key:  YOUR_BEARER_TOKEN_HERE
+
+
+# ── Network share delivery ────────────────────────────────────────────────────
+# Required when mode: share
+# Creates a per-machine subfolder using %COMPUTERNAME%.
+#
+# share_path: \\fileserver\it-snapshot$\reports\%COMPUTERNAME%
+
+
+# ── Local output directory ────────────────────────────────────────────────────
+# Where to write report files in local mode.
+# Relative paths are resolved from the current working directory.
+# Tokens like %COMPUTERNAME% are expanded at runtime.
+#
+output_dir: C:\ProgramData\it-snapshot\reports\%COMPUTERNAME%
+
+# macOS / Linux example:
+# output_dir: /var/lib/it-snapshot/reports/%COMPUTERNAME%
+
+
+# ── Collection options ────────────────────────────────────────────────────────
+collect:
+  # Minimum Windows Event Log severity to include.
+  # Values: info | warning | error | critical
+  logs_level: warning
+
+  # Include full installed software list.
+  software_list: true
+
+  # Include antivirus, firewall, UAC, BitLocker, and Defender data.
+  security: true
+
+  # Include startup registry entries and scheduled tasks.
+  startup_items: true
+
+
+# ── Privacy controls ──────────────────────────────────────────────────────────
+privacy:
+  # Replace usernames with "<user>" in Windows Event Log messages.
+  sanitize_logs: false
+
+  # Maximum characters per event log message (0 = unlimited).
+  truncate_event_message_len: 500
+
+  # Replace C:\Users\<name>\ with C:\Users\<user>\ in all collected paths.
+  mask_user_paths: false
+
+
+# ── Run frequency throttling ───────────────────────────────────────────────────
+intervals:
+  # Informational flag - used by wrapper scripts; does not auto-schedule the task.
+  run_on_startup: true
+
+  # Skip the run if the last successful run was less than N hours ago.
+  # Useful when launched from a login script that may trigger on rapid reboots.
+  # Set to 0 to disable throttling.
+  min_hours_between_runs: 20
