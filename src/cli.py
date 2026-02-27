@@ -80,6 +80,18 @@ def parse_args(argv=None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--maintenance",
+        choices=["plan"],
+        metavar="ACTION",
+        default=None,
+        help=(
+            "Generate a maintenance plan alongside the report. "
+            "Supported action: 'plan'. "
+            "Writes maintenance_plan.json next to the report output. "
+            "No changes are applied to the system (read-only, advisory only)."
+        ),
+    )
+    parser.add_argument(
         "--version", "-v",
         action="version",
         version=f"it-snapshot {__version__}",
@@ -93,6 +105,13 @@ def _resolve_paths(output_arg: str) -> tuple[Path, Path]:
     p = Path(output_arg)
     stem = p.with_suffix("") if p.suffix.lower() in (".json", ".html") else p
     return stem.with_suffix(".json"), stem.with_suffix(".html")
+
+
+def _resolve_maintenance_path(output_arg: str) -> Path:
+    """Return the maintenance_plan.json path alongside the report output."""
+    p = Path(output_arg)
+    stem = p.with_suffix("") if p.suffix.lower() in (".json", ".html") else p
+    return stem.parent / "maintenance_plan.json"
 
 
 # ── legacy v1 OS helper ───────────────────────────────────────────────────────
@@ -421,6 +440,16 @@ def run(argv=None) -> None:
         _post_report(report, args.post_url, args.api_key)
     elif args.mode == "share":
         _share_report(json_path, args.share_path)
+
+    # Maintenance plan (read-only — no system changes)
+    if args.maintenance == "plan":
+        print("  - Generating maintenance plan...", end=" ", flush=True)
+        from .maintenance.generator import generate as generate_maintenance
+        maintenance_plan = generate_maintenance(report)
+        maint_path = _resolve_maintenance_path(args.output)
+        write_json(maintenance_plan, maint_path, pretty=pretty)
+        print("done")
+        print(f"[it-snapshot] MAINT -> {maint_path.resolve()}")
 
     # Summary line
     risk           = report.get("risk_score", {})
