@@ -16,13 +16,13 @@ A cross-platform endpoint inventory agent that collects a comprehensive point-in
 |---|---|
 | **Device Identity** | Hostname, FQDN, domain/workgroup, Machine GUID (Windows) / Platform UUID (macOS), MAC addresses, Azure AD device ID |
 | **Hardware** | CPU (model, cores, threads, max clock, manufacturer), RAM total + per-DIMM slot (capacity, speed, manufacturer, part number), GPU (name, driver, VRAM), BIOS, motherboard, TPM (present/version), Secure Boot, monitors, printers |
-| **Physical Disks** | Model, serial number, media type (SSD/HDD), interface (NVMe/SATA/USB), size |
-| **Storage** | All partitions — drive letter, filesystem, total / used / free / %, BitLocker status |
-| **OS Detail** | Edition, version, build number, install date, last boot, hotfix KB list + last installed date, local Administrators group members |
-| **Network** | Per-adapter detail: MAC, driver version, link speed, IP / IPv6 addresses, DHCP, DNS servers, default gateway; active Wi-Fi SSID |
-| **Software** | Full installed software list (name, version, publisher, install date) + startup entries (registry Run keys & startup folders) |
+| **Physical Disks** | Model, serial number, media type (SSD/HDD), interface (NVMe/SATA/USB/BusProtocol), size |
+| **Storage** | All partitions — drive letter, filesystem, total / used / free / %, BitLocker (Windows) / FileVault (macOS) status |
+| **OS Detail** | Edition, version, build number, last boot; Windows: hotfix KB list + last installed date, local Administrators; macOS: softwareupdate history, admin group members |
+| **Network** | Per-adapter detail: MAC, link speed, IP / IPv6 addresses, DNS servers, default gateway; active Wi-Fi SSID |
+| **Software** | Full installed software list with version and publisher; Windows: startup entries (registry Run keys & startup folders); macOS: /Applications scan (Info.plist) + pkgutil package count |
 | **Security** | Antivirus, firewall profiles, UAC, BitLocker / FileVault, Windows Defender, Secure Boot, Gatekeeper (macOS), SIP (macOS) |
-| **Logs** | 7-day event log summary (Critical / Error / Warning counts, top 10 error sources, 20 most recent critical/error events) for System & Application logs; failed login attempts |
+| **Logs** | Windows: 7-day event log summary (Critical / Error / Warning counts, top 10 sources, 20 most recent events); macOS: last-hour unified log errors/faults + failed authentication attempts |
 | **Findings** | Automated risk findings with severity ratings |
 | **Risk Score** | Weighted score (0–100) with level: low / medium / high / critical |
 
@@ -32,6 +32,21 @@ A cross-platform endpoint inventory agent that collects a comprehensive point-in
 
 - Python 3.10 or newer
 - Windows 10/11 or macOS (Windows Server supported)
+
+### macOS permissions
+
+Some collectors require elevated access or specific permissions:
+
+| Collector | Command | Required access |
+|---|---|---|
+| FileVault status | `fdesetup status` | May require `sudo` on managed devices |
+| System Integrity Protection | `csrutil status` | Read-only — no special privilege needed |
+| Gatekeeper | `spctl --status` | No special privilege needed |
+| Firewall state | `socketfilterfw --getglobalstate` | No special privilege needed |
+| Full disk access (logs) | `log show` | May require **Full Disk Access** in System Settings → Privacy |
+| Software update history | `softwareupdate --history` | No special privilege needed |
+
+If `log show` returns empty results, grant **Full Disk Access** to Terminal (or the Python executable) in **System Settings → Privacy & Security → Full Disk Access**.
 
 ---
 

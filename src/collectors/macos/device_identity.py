@@ -1,17 +1,11 @@
 """Collect macOS device identity information."""
 
-import json
 import socket
-import subprocess
 
 import psutil
 
 from ..base import BaseCollector
-
-
-def _run(cmd: list, timeout: int = 30) -> str:
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    return result.stdout.strip()
+from . import _utils
 
 
 class DeviceIdentityCollector(BaseCollector):
@@ -19,12 +13,11 @@ class DeviceIdentityCollector(BaseCollector):
 
     def _collect(self) -> dict:
         hostname = socket.gethostname()
-        fqdn = socket.getfqdn()
+        fqdn     = socket.getfqdn()
 
         platform_uuid = None
         try:
-            raw = _run(["system_profiler", "SPHardwareDataType", "-json"])
-            data = json.loads(raw)
+            data = _utils.run_json(["system_profiler", "SPHardwareDataType", "-json"])
             hw = data.get("SPHardwareDataType", [{}])[0]
             platform_uuid = hw.get("platform_UUID")
         except Exception:
@@ -44,11 +37,15 @@ class DeviceIdentityCollector(BaseCollector):
             pass
 
         return {
-            "hostname": hostname,
-            "fqdn": fqdn,
-            "domain": None,
-            "workgroup": None,
-            "os_machine_id": platform_uuid,
-            "primary_macs": primary_macs[:4],
+            "hostname":          hostname,
+            "fqdn":              fqdn,
+            "domain":            self._get_domain(),
+            "workgroup":         None,
+            "os_machine_id":     platform_uuid,
+            "primary_macs":      primary_macs[:4],
             "azure_ad_device_id": None,
         }
+
+    def _get_domain(self) -> str | None:
+        raw = _utils.run_cmd(["scutil", "--get", "LocalHostName"])
+        return raw or None

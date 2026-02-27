@@ -1,16 +1,7 @@
 """Collect macOS security configuration."""
 
-import subprocess
-
 from ..base import BaseCollector
-
-
-def _run(cmd: list) -> str:
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return result.stdout.strip()
-    except Exception:
-        return ""
+from . import _utils
 
 
 class SecurityCollector(BaseCollector):
@@ -18,18 +9,18 @@ class SecurityCollector(BaseCollector):
 
     def _collect(self) -> dict:
         return {
-            "antivirus": [],
-            "firewall": self._get_firewall(),
-            "uac_enabled": None,
-            "encryption": {"filevault_enabled": self._get_filevault()},
-            "windows_defender": None,
+            "antivirus":           [],
+            "firewall":            self._get_firewall(),
+            "uac_enabled":         None,
+            "encryption":          {"filevault_enabled": self._get_filevault()},
+            "windows_defender":    None,
             "secure_boot_enabled": None,
-            "gatekeeper_enabled": self._get_gatekeeper(),
-            "sip_enabled": self._get_sip(),
+            "gatekeeper_enabled":  self._get_gatekeeper(),
+            "sip_enabled":         self._get_sip(),
         }
 
     def _get_filevault(self):
-        out = _run(["fdesetup", "status"])
+        out = _utils.run_cmd(["fdesetup", "status"])
         if "On" in out:
             return True
         if "Off" in out:
@@ -37,7 +28,7 @@ class SecurityCollector(BaseCollector):
         return None
 
     def _get_gatekeeper(self):
-        out = _run(["spctl", "--status"])
+        out = _utils.run_cmd(["spctl", "--status"])
         if "enabled" in out.lower():
             return True
         if "disabled" in out.lower():
@@ -45,7 +36,7 @@ class SecurityCollector(BaseCollector):
         return None
 
     def _get_sip(self):
-        out = _run(["csrutil", "status"])
+        out = _utils.run_cmd(["csrutil", "status"])
         if "enabled" in out.lower():
             return True
         if "disabled" in out.lower():
@@ -53,16 +44,22 @@ class SecurityCollector(BaseCollector):
         return None
 
     def _get_firewall(self) -> dict:
-        try:
-            out = _run([
+        # Prefer socketfilterfw for accurate state
+        out = _utils.run_cmd([
+            "/usr/libexec/ApplicationFirewall/socketfilterfw",
+            "--getglobalstate",
+        ])
+        if out:
+            enabled = "enabled" in out.lower()
+        else:
+            # Fallback: defaults read
+            val = _utils.run_cmd([
                 "defaults", "read",
                 "/Library/Preferences/com.apple.alf", "globalstate",
             ])
-            enabled = out.strip() not in ("0", "")
-        except Exception:
-            enabled = None
+            enabled = (val.strip() not in ("0", "")) if val.strip() else None
         return {
-            "domain_enabled": enabled,
+            "domain_enabled":  enabled,
             "private_enabled": enabled,
-            "public_enabled": enabled,
+            "public_enabled":  enabled,
         }

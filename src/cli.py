@@ -154,6 +154,8 @@ def _load_platform_collectors():
     elif sys.platform == "darwin":
         from .collectors.macos.device_identity import DeviceIdentityCollector
         from .collectors.macos.hardware        import HardwareCollector as MacHW
+        from .collectors.macos.storage         import StorageCollector  as MacStorage
+        from .collectors.macos.os_info         import OsInfoCollector
         from .collectors.macos.software        import SoftwareCollector
         from .collectors.macos.security        import SecurityCollector
         from .collectors.macos.network         import NetworkCollector  as MacNet
@@ -161,6 +163,8 @@ def _load_platform_collectors():
         return [
             ("device_identity", DeviceIdentityCollector()),
             ("_mac_hardware",   MacHW()),
+            ("_mac_storage",    MacStorage()),
+            ("os_detail",       OsInfoCollector()),
             ("software",        SoftwareCollector()),
             ("security",        SecurityCollector()),
             ("_mac_network",    MacNet()),
@@ -208,14 +212,17 @@ def _assemble_report(
         "printers":     plat_hw.get("printers",     []),
     }
 
-    # ── Storage: prefer Windows-specific (has physical disks + BitLocker) ────
-    win_storage  = platform_results.get("_win_storage", {})
+    # ── Storage: prefer platform-specific (has physical disks + encryption) ─
+    win_storage = platform_results.get("_win_storage", {})
+    mac_storage = platform_results.get("_mac_storage", {})
+    plat_storage = win_storage or mac_storage
+
     storage_list = (
-        win_storage.get("logical_volumes")
-        if win_storage
+        plat_storage.get("logical_volumes")
+        if plat_storage
         else common_storage.get("partitions", [])
     )
-    physical_disks = win_storage.get("physical_disks", []) if win_storage else []
+    physical_disks = plat_storage.get("physical_disks", []) if plat_storage else []
 
     # ── Network: common psutil interfaces + Windows-specific adapter detail ──
     win_net = platform_results.get("_win_network", {})
@@ -304,10 +311,14 @@ def run(argv=None) -> None:
         sys.exit(1)
 
     # Apply dry-run flag before any collector imports
-    if args.dry_run and sys.platform == "win32":
-        from .collectors.windows import _utils
-        _utils.DRY_RUN = True
-        print("[it-snapshot] DRY-RUN mode: PowerShell and external commands are stubbed.")
+    if args.dry_run:
+        if sys.platform == "win32":
+            from .collectors.windows import _utils as _win_utils
+            _win_utils.DRY_RUN = True
+        elif sys.platform == "darwin":
+            from .collectors.macos import _utils as _mac_utils
+            _mac_utils.DRY_RUN = True
+        print("[it-snapshot] DRY-RUN mode: external commands are stubbed.")
 
     json_path, html_path = _resolve_paths(args.output)
     pretty = not args.no_pretty
