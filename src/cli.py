@@ -184,7 +184,8 @@ def _assemble_report(
     legacy_os:      dict,
     all_errors:     list[str],
 ) -> dict:
-    from .report.findings import compute_findings
+    from .report.findings        import compute_findings
+    from .recommendations.engine import analyze as compute_recommendations
 
     now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -266,8 +267,9 @@ def _assemble_report(
     }
 
     findings, risk_score = compute_findings(report)
-    report["findings"]   = findings
-    report["risk_score"] = risk_score
+    report["findings"]        = findings
+    report["risk_score"]      = risk_score
+    report["recommendations"] = compute_recommendations(report)
 
     return report
 

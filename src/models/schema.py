@@ -160,6 +160,18 @@ class RiskScore(BaseModel):
     factors: list[str] = []
 
 
+class Recommendation(BaseModel):
+    severity: str      # info | warning | critical
+    title: str
+    detail: str
+    remediation: str
+
+
+class RecommendationsSection(BaseModel):
+    risk_score: int = 0
+    findings: list[Recommendation] = []
+
+
 class SnapshotReport(BaseModel):
     schema_version: str = "2.0"
     agent_version: str = "2.0.0"
@@ -174,6 +186,7 @@ class SnapshotReport(BaseModel):
     logs: LogsSection = LogsSection()
     findings: list[Finding] = []
     risk_score: RiskScore = RiskScore()
+    recommendations: RecommendationsSection = RecommendationsSection()
     errors: list[str] = []
     # Legacy v1 keys (always present, unchanged shape)
     snapshot: dict[str, Any] = {}
