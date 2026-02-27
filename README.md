@@ -15,12 +15,14 @@ A cross-platform endpoint inventory agent that collects a comprehensive point-in
 | Category | Details |
 |---|---|
 | **Device Identity** | Hostname, FQDN, domain/workgroup, Machine GUID (Windows) / Platform UUID (macOS), MAC addresses, Azure AD device ID |
-| **Hardware** | CPU cores & frequency, RAM, GPU (name, driver, VRAM), BIOS, motherboard |
-| **Storage** | All partitions — total / used / free / % for each |
-| **Network** | All interfaces (MAC, IPs, speed), DNS servers, default gateway |
-| **Software** | Full installed software list with version, publisher, install date |
+| **Hardware** | CPU (model, cores, threads, max clock, manufacturer), RAM total + per-DIMM slot (capacity, speed, manufacturer, part number), GPU (name, driver, VRAM), BIOS, motherboard, TPM (present/version), Secure Boot, monitors, printers |
+| **Physical Disks** | Model, serial number, media type (SSD/HDD), interface (NVMe/SATA/USB), size |
+| **Storage** | All partitions — drive letter, filesystem, total / used / free / %, BitLocker status |
+| **OS Detail** | Edition, version, build number, install date, last boot, hotfix KB list + last installed date, local Administrators group members |
+| **Network** | Per-adapter detail: MAC, driver version, link speed, IP / IPv6 addresses, DHCP, DNS servers, default gateway; active Wi-Fi SSID |
+| **Software** | Full installed software list (name, version, publisher, install date) + startup entries (registry Run keys & startup folders) |
 | **Security** | Antivirus, firewall profiles, UAC, BitLocker / FileVault, Windows Defender, Secure Boot, Gatekeeper (macOS), SIP (macOS) |
-| **Logs** | Recent system errors & warnings, failed login attempts |
+| **Logs** | 7-day event log summary (Critical / Error / Warning counts, top 10 error sources, 20 most recent critical/error events) for System & Application logs; failed login attempts |
 | **Findings** | Automated risk findings with severity ratings |
 | **Risk Score** | Weighted score (0–100) with level: low / medium / high / critical |
 
@@ -91,6 +93,7 @@ python main.py --help
 | `--post-url` | — | URL to POST the JSON report to (required with `--mode=post`) |
 | `--api-key` | — | Bearer token for the Authorization header when posting |
 | `--share-path` | — | UNC or local path to copy the JSON to (required with `--mode=share`) |
+| `--dry-run` | false | Skip privileged / external commands; return empty stubs (useful for testing) |
 | `--no-pretty` | false | Write compact JSON without indentation |
 | `--version`, `-v` | — | Show version and exit |
 
@@ -131,18 +134,33 @@ The agent automatically evaluates the collected data against a set of rules and 
     "primary_macs": ["aa:bb:cc:dd:ee:ff"]
   },
   "hardware": {
-    "cpu": { "physical_cores": 8, "logical_cores": 16, "max_frequency_mhz": 3600.0, "usage_percent": 12.5 },
-    "ram": { "total_gb": 32.0, "available_gb": 18.4, "used_gb": 13.6, "percent_used": 42.5 },
+    "cpu": { "brand": "Intel Core i7-1185G7", "physical_cores": 4, "logical_cores": 8, "max_frequency_mhz": 3000.0 },
+    "ram": {
+      "total_gb": 32.0, "available_gb": 18.4, "used_gb": 13.6, "percent_used": 42.5,
+      "modules": [
+        { "slot": "ChannelA-DIMM0", "capacity_gb": 16.0, "speed_mhz": 3200, "manufacturer": "Micron", "part_number": "MT53E1G32D4NQ-046" }
+      ]
+    },
     "gpu": [{ "name": "NVIDIA RTX 4060", "driver_version": "31.0.15.3179", "vram_mb": 8192 }],
     "bios": { "manufacturer": "Dell Inc.", "version": "1.15.0", "release_date": "20250101000000.000000+000" },
-    "motherboard": { "manufacturer": "Dell Inc.", "product": "0ABC12", "serial": "XYZ789" }
+    "motherboard": { "manufacturer": "Dell Inc.", "product": "0ABC12", "serial": "XYZ789" },
+    "tpm": { "present": true, "version": "2.0" },
+    "secure_boot_enabled": true
   },
+  "physical_disks": [
+    { "model": "Samsung MZVL21T0HCLR", "serial": "S64ENX0T123456", "media_type": "SSD", "interface": "NVMe", "size_gb": 953.86 }
+  ],
   "storage": [
     {
-      "device": "C:\\", "mountpoint": "C:\\", "fstype": "NTFS",
-      "total_gb": 476.84, "used_gb": 210.5, "free_gb": 266.34, "percent_used": 44.1, "status": "ok"
+      "drive_letter": "C:\\", "fstype": "NTFS",
+      "total_gb": 476.84, "used_gb": 210.5, "free_gb": 266.34, "percent_used": 44.1,
+      "status": "ok", "bitlocker_status": "FullyEncrypted", "bitlocker_protection": "On"
     }
   ],
+  "os_detail": {
+    "edition": "Windows 11 Pro", "version": "10.0.22631", "build": "22631",
+    "patches": { "count": 5, "last_installed": "2026-02-20", "hotfixes": ["KB5034765", "KB5032189"] }
+  },
   "findings": [
     { "id": "SEC-001", "severity": "high", "title": "No active antivirus detected", "detail": "..." }
   ],
@@ -168,7 +186,7 @@ it-snapshot/
 │   ├── collectors/
 │   │   ├── base.py                   # BaseCollector + CollectorResult
 │   │   ├── common/                   # Cross-platform: hardware, storage, network, uptime
-│   │   ├── windows/                  # Windows: device_identity, hardware, software, security, network, logs
+│   │   ├── windows/                  # Windows: device_identity, hardware, storage, os_info, software, security, network, logs
 │   │   └── macos/                    # macOS: device_identity, hardware, software, security, network, logs
 │   ├── models/
 │   │   └── schema.py                 # Pydantic v2 models
@@ -180,6 +198,17 @@ it-snapshot/
 ├── requirements.txt                  # psutil, pydantic, requests
 └── README.md
 ```
+
+---
+
+## Running tests
+
+```cmd
+pip install pytest
+pytest tests/ -v
+```
+
+77 tests cover the findings engine, Pydantic schema validation, and Windows collector JSON parsing (all PowerShell calls are mocked — no elevated privileges required).
 
 ---
 
