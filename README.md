@@ -334,6 +334,69 @@ pytest tests/ -v
 
 ---
 
+---
+
+## Packaging (Windows MSI)
+
+### 1. Build the standalone executable with PyInstaller
+
+```cmd
+pip install pyinstaller
+pyinstaller --onefile --name it-snapshot main.py
+REM Output: dist\it-snapshot.exe
+```
+
+### 2. Build the MSI with WiX Toolset v4
+
+```cmd
+REM Install WiX v4 (once)
+dotnet tool install --global wix
+
+REM Build the MSI from the packaging directory
+cd packaging\windows
+wix build it-snapshot.wxs -o it-snapshot.msi
+```
+
+The MSI installs:
+
+| Path | Contents |
+|---|---|
+| `C:\Program Files\it-snapshot\it-snapshot.exe` | Agent executable |
+| `C:\Program Files\it-snapshot\ITSnapshotAgent.xml` | Scheduled task XML |
+| `C:\ProgramData\it-snapshot\agent.yaml` | Default config (not overwritten on upgrade) |
+| `C:\ProgramData\it-snapshot\logs\` | Empty logs directory |
+
+The MSI also creates a scheduled task **ITSnapshotAgent** that runs the agent
+as `SYSTEM` at every boot (with a 60-second delay) when a network connection is
+available.
+
+### 3. Uninstall
+
+**Standard uninstall** (keeps state and logs):
+```cmd
+msiexec /x it-snapshot.msi
+```
+
+**Full cleanup** (removes `C:\ProgramData\it-snapshot\` too):
+```cmd
+msiexec /x it-snapshot.msi REMOVEALL=YES
+```
+
+### 4. Deploy via Active Directory (GPO Software Installation)
+
+1. Copy `it-snapshot.msi` to a network share, e.g. `\\fileserver\GPO$\it-snapshot.msi`
+2. Open **Group Policy Management** → create or edit a GPO linked to the target OU
+3. Navigate to **Computer Configuration → Policies → Software Settings → Software Installation**
+4. Right-click → **New → Package** → select the MSI from the UNC path
+5. Choose **Assigned** deployment — the MSI installs on next boot/logon
+
+> **Tip**: Set `IT_SNAPSHOT_UNC_SERVER` as a Computer environment variable in
+> the same GPO (**Computer Configuration → Preferences → Windows Settings →
+> Environment**). Agents will then automatically load the central config from
+> the file server and fall back to the local copy when offline.
+
+---
+
 ## Exit codes
 
 | Code | Meaning |

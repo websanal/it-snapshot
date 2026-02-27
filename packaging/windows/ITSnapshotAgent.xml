@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  Scheduled task definition for ITSnapshotAgent.
+  Imported by the MSI via: schtasks.exe /Create /TN "ITSnapshotAgent" /F /XML <this file>
+
+  Trigger  : At system startup (boot)
+  Run as   : SYSTEM (no password required, highest privilege)
+  Condition: Start only when any network connection is available
+  Action   : it-snapshot.exe --config "C:\ProgramData\it-snapshot\agent.yaml"
+
+  The 60-second startup delay gives network adapters time to obtain IP addresses
+  and reach the file server / POST endpoint before the first run.
+-->
+<Task version="1.4"
+      xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+
+  <RegistrationInfo>
+    <Description>Collects an endpoint inventory snapshot at startup and delivers it per the agent configuration file.</Description>
+    <Author>websanal / it-snapshot</Author>
+    <URI>\ITSnapshotAgent</URI>
+  </RegistrationInfo>
+
+  <Triggers>
+    <BootTrigger>
+      <Enabled>true</Enabled>
+      <!-- Wait 60 seconds after boot before running so the network is ready -->
+      <Delay>PT1M</Delay>
+    </BootTrigger>
+  </Triggers>
+
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>        <!-- SYSTEM -->
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+
+  <Actions Context="Author">
+    <Exec>
+      <!--
+        NOTE: The MSI installs the exe to C:\Program Files\it-snapshot\.
+              If you customised the install directory, update this path.
+      -->
+      <Command>C:\Program Files\it-snapshot\it-snapshot.exe</Command>
+      <Arguments>--config "C:\ProgramData\it-snapshot\agent.yaml"</Arguments>
+      <WorkingDirectory>C:\ProgramData\it-snapshot</WorkingDirectory>
+    </Exec>
+  </Actions>
+
+</Task>

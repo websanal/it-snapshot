@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX Toolset v4 source for the it-snapshot Windows installer.
+
+  Prerequisites:
+    - WiX Toolset v4:  dotnet tool install --global wix
+    - PyInstaller EXE: dist\it-snapshot.exe  (see README for build command)
+
+  Quick build:
+    wix build it-snapshot.wxs -o it-snapshot.msi
+
+  What this MSI does:
+    INSTALL
+      • Copies it-snapshot.exe to C:\Program Files\it-snapshot\
+      • Drops a default agent.yaml into C:\ProgramData\it-snapshot\
+        (only if the file does not already exist, to preserve customisations)
+      • Creates C:\ProgramData\it-snapshot\logs\  (empty folder)
+      • Registers the scheduled task "ITSnapshotAgent"
+          Trigger  : At startup (boot)
+          Run as   : SYSTEM
+          Condition: Start only when a network connection is available
+          Action   : "C:\Program Files\it-snapshot\it-snapshot.exe"
+                         --config "C:\ProgramData\it-snapshot\agent.yaml"
+
+    UNINSTALL (standard)
+      • Removes the scheduled task
+      • Removes C:\Program Files\it-snapshot\
+      • Leaves C:\ProgramData\it-snapshot\ intact
+        (state file, cached config, logs are kept)
+
+    UNINSTALL (full cleanup – REMOVEALL property set to "YES")
+      • All of the above, PLUS removes C:\ProgramData\it-snapshot\
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package
+    Name="it-snapshot"
+    Version="2.0.0"
+    Manufacturer="websanal"
+    UpgradeCode="4F8A2C1D-E7B3-4F9A-A2D6-8C3E5F1B7A90"
+    Language="1033"
+    Codepage="1252"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <!-- ── Upgrade handling ─────────────────────────────────────────────── -->
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of it-snapshot is already installed."
+      Schedule="afterInstallInitialize" />
+
+    <!-- ── Media / cabinet ──────────────────────────────────────────────── -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ── Install directory: C:\Program Files\it-snapshot\ ─────────────── -->
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLDIR" Name="it-snapshot">
+
+        <!-- Main executable -->
+        <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+          <File Id="ItSnapshotExe"
+                Source="..\..\dist\it-snapshot.exe"
+                KeyPath="yes" />
+        </Component>
+
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ── ProgramData directory: C:\ProgramData\it-snapshot\ ──────────── -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="PROGRAMDATADIR" Name="it-snapshot">
+
+        <!-- Default agent config (only installed if not already present) -->
+        <Component Id="DefaultConfig"
+                   Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901"
+                   NeverOverwrite="yes"
+                   Permanent="yes">
+          <File Id="AgentYaml"
+                Source="agent.yaml"
+                KeyPath="yes" />
+        </Component>
+
+        <!-- Logs directory (empty folder placeholder) -->
+        <Component Id="LogsDir" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
+          <CreateFolder Directory="LOGSDIR" />
+          <RemoveFolder Id="RemoveLogsDir" Directory="LOGSDIR" On="uninstall" />
+          <RegistryValue Root="HKLM"
+                         Key="SOFTWARE\it-snapshot"
+                         Name="LogsDir"
+                         Type="string"
+                         Value="[LOGSDIR]"
+                         KeyPath="yes" />
+        </Component>
+
+        <!-- Logs sub-directory -->
+        <Directory Id="LOGSDIR" Name="logs" />
+
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ── Scheduled task: ITSnapshotAgent ──────────────────────────────── -->
+    <!--
+      WiX util:ScheduledTask creates the task at install time via schtasks.exe.
+      The task is removed automatically on uninstall.
+    -->
+    <Component Id="ScheduledTask"
+               Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123"
+               Directory="INSTALLDIR">
+      <util:ScheduledTask
+        Name="ITSnapshotAgent"
+        Description="Collects an endpoint inventory snapshot and delivers it per agent config."
+        Enabled="yes"
+        Hidden="no"
+        RunOnce="no"
+        Task="[INSTALLDIR]it-snapshot.exe --config &quot;[COMMONAPPDATADIR]it-snapshot\agent.yaml&quot;"
+        Arguments=""
+        Directory="[INSTALLDIR]"
+        ExecuteAsLoggedOn="no"
+        User="SYSTEM" />
+      <!--
+        Note: WiX util:ScheduledTask supports basic triggers only.
+        For "at startup + network available" we use a CustomAction that
+        calls schtasks.exe with the full XML definition (see below).
+        The util:ScheduledTask entry above is kept as a fallback / uninstall hook.
+      -->
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\it-snapshot"
+                     Name="Installed"
+                     Type="string"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <!-- ── Custom Actions ───────────────────────────────────────────────── -->
+
+    <!-- Create task with full XML so we can set network-available condition -->
+    <CustomAction Id="CreateScheduledTask"
+                  Directory="INSTALLDIR"
+                  ExeCommand="schtasks.exe /Create /TN &quot;ITSnapshotAgent&quot; /F /XML &quot;[INSTALLDIR]ITSnapshotAgent.xml&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <!-- Remove task on uninstall -->
+    <CustomAction Id="RemoveScheduledTask"
+                  Directory="INSTALLDIR"
+                  ExeCommand="schtasks.exe /Delete /TN &quot;ITSnapshotAgent&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Full cleanup: remove ProgramData directory when REMOVEALL=YES -->
+    <CustomAction Id="RemoveProgramData"
+                  Directory="PROGRAMDATADIR"
+                  ExeCommand="cmd.exe /C rd /S /Q &quot;[PROGRAMDATADIR]&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Task XML component (installed alongside exe, removed with it) -->
+    <Component Id="TaskXml"
+               Guid="E5F6A7B8-C9D0-1234-EF01-345678901234"
+               Directory="INSTALLDIR">
+      <File Id="TaskXmlFile"
+            Source="ITSnapshotAgent.xml"
+            KeyPath="yes" />
+    </Component>
+
+    <!-- ── Install sequence ──────────────────────────────────────────────── -->
+    <InstallExecuteSequence>
+      <Custom Action="CreateScheduledTask" After="InstallFiles">
+        NOT Installed
+      </Custom>
+      <Custom Action="RemoveScheduledTask" Before="RemoveFiles">
+        (NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")
+      </Custom>
+      <Custom Action="RemoveProgramData" After="RemoveFiles">
+        (NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL") AND (REMOVEALL="YES")
+      </Custom>
+    </InstallExecuteSequence>
+
+    <!-- ── Feature ───────────────────────────────────────────────────────── -->
+    <Feature Id="ProductFeature" Title="it-snapshot" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="DefaultConfig" />
+      <ComponentRef Id="LogsDir" />
+      <ComponentRef Id="ScheduledTask" />
+      <ComponentRef Id="TaskXml" />
+    </Feature>
+
+    <!-- ── Property: REMOVEALL controls full cleanup on uninstall ────────── -->
+    <Property Id="REMOVEALL" Value="NO" />
+
+    <!--
+      To trigger full cleanup from the command line:
+        msiexec /x it-snapshot.msi REMOVEALL=YES
+    -->
+
+  </Package>
+</Wix>

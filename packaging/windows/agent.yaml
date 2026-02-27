@@ -1,0 +1,83 @@
+# it-snapshot agent configuration
+# Installed to: C:\ProgramData\it-snapshot\agent.yaml
+#
+# This file is the LOCAL fallback config. It is created by the MSI only if
+# no config file already exists at this path, so your customisations are
+# preserved across upgrades.
+#
+# For fleet deployments you can maintain a single master copy on a file server
+# and point agents at it via the IT_SNAPSHOT_UNC_SERVER machine environment
+# variable (set via Group Policy):
+#
+#   IT_SNAPSHOT_UNC_SERVER = fileserver.corp.example.com
+#
+# When that variable is set the agent will:
+#   1. Try to load \\fileserver.corp.example.com\it-snapshot$\config\agent.yaml
+#   2. Cache a copy here for offline resilience
+#   3. Fall back to this cached copy if the file server is unreachable
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Delivery mode: local | post | share
+#
+#   local  - Write report.json + report.html to output_dir (default)
+#   post   - POST the JSON report to an HTTP endpoint (requires post_url)
+#   share  - Copy the JSON report to a network share (requires share_path)
+#
+mode: local
+
+# ── HTTP POST delivery ────────────────────────────────────────────────────────
+# Uncomment and fill in when mode: post
+#
+# post_url: https://it-management.corp.example.com/api/snapshots
+# api_key:  YOUR_BEARER_TOKEN_HERE
+
+# ── Network share delivery ────────────────────────────────────────────────────
+# Uncomment and fill in when mode: share
+# %COMPUTERNAME% is expanded to the machine name at runtime.
+#
+# share_path: \\fileserver\it-snapshot$\reports\%COMPUTERNAME%
+
+# ── Local output directory ────────────────────────────────────────────────────
+# Where to write report.json and report.html in local mode.
+# Defaults to the current working directory if not set.
+# %COMPUTERNAME% expansion is supported.
+#
+output_dir: C:\ProgramData\it-snapshot\reports\%COMPUTERNAME%
+
+# ── What to collect ───────────────────────────────────────────────────────────
+collect:
+  # Minimum Windows Event Log severity to include in the logs section.
+  # Accepted values: info | warning | error | critical
+  logs_level: warning
+
+  # Include the full installed software list.
+  software_list: true
+
+  # Include antivirus, firewall, UAC, BitLocker, and Defender data.
+  security: true
+
+  # Include startup registry entries and scheduled tasks.
+  startup_items: true
+
+# ── Privacy controls ──────────────────────────────────────────────────────────
+privacy:
+  # Replace usernames in Windows Event Log messages with "<user>".
+  sanitize_logs: false
+
+  # Truncate individual event log messages to this many characters.
+  # Set to 0 for unlimited.
+  truncate_event_message_len: 500
+
+  # Replace C:\Users\<username>\ with C:\Users\<user>\ in all paths.
+  mask_user_paths: false
+
+# ── Run frequency ─────────────────────────────────────────────────────────────
+intervals:
+  # Informational only - the scheduled task XML controls actual frequency.
+  run_on_startup: true
+
+  # Skip the run if the last successful run was less than this many hours ago.
+  # This prevents duplicate collections on rapid reboots during patching.
+  # Set to 0 to disable throttling.
+  min_hours_between_runs: 20
